@@ -11,6 +11,8 @@
 
 package bot;
 
+import java.util.HashMap;
+
 import com.stevebrecher.HandEval;
 
 import poker.Card;
@@ -27,10 +29,12 @@ public class BotStarter implements Bot {
     public static final String RAISE_ACTION = "raise";
     public static final String CHECK_ACTION = "check";
     public static final String FOLD_ACTION = "fold";
+    public static final float CURIOSITY = 0.05f;
+    public static final float COCKYNESS = 0.025f;
+    private HashMap<String, Integer> roundMoneys = new HashMap<String, Integer>();
     private String botName = "stilkin";
     private HandHoldem hand;
     private int lastRound = -1;
-    private int totalPreFlopRaise;
 
     /**
      * Implement this method to return the best move you can. Currently it will return a raise the ordinal value of one of our cards is higher than 9, a call when one of the cards
@@ -48,12 +52,12 @@ public class BotStarter implements Bot {
 	hand = state.getHand();
 	final Card[] table = state.getTable();
 
+	if (lastRound != state.getRound()) { // reset round counters
+	    lastRound = state.getRound();
+	    roundMoneys.clear();
+	}
+
 	if (table == null || table.length < 3) { // pre-flop
-	    if (lastRound != state.getRound()) { // reset pre-flop counters
-		lastRound = state.getRound();
-		totalPreFlopRaise = 0;
-		// TODO: also monitor calls?
-	    }
 	    return preFlop(table, state);
 	} else { // post-flop
 	    return postFlop(table, state);
@@ -65,9 +69,16 @@ public class BotStarter implements Bot {
     // *****************
 
     private PokerMove postFlop(final Card[] table, final BotState state) {
-	final HandEval.HandCategory category = getHandCategory(hand, table);
+	final int callAmount = state.getAmountToCall();
+	HandEval.HandCategory botHand = getHandCategory(hand, table);
+	final HandEval.HandCategory tableHand = getCardsCategory(table);
 
-	// TODO: get the "hand" of the table?
+	// if the five table cards are stronger or equally strong // TODO: code for flop and river
+	if (tableHand != null && tableHand.ordinal() >= botHand.ordinal()) {
+	    // only look at our own cards for decision making
+	    // botHand = getHandCategory(hand, null);
+	    return preFlopCheck(state);
+	}
 
 	// Get the ordinal values of the cards in your hand
 	final int height1 = hand.getCard(0).getHeight().ordinal();
@@ -75,7 +86,7 @@ public class BotStarter implements Bot {
 	final int sum = height1 + height2;
 
 	int odds = 1;
-	switch (category) {
+	switch (botHand) {
 	    case STRAIGHT_FLUSH:
 		odds = 72192;
 		return raiseWithOdds(state, odds);
@@ -94,39 +105,50 @@ public class BotStarter implements Bot {
 	    case THREE_OF_A_KIND: // TODO: find out which card is in the THREE OF A KIND
 		odds = 46;
 		if (sum > 5) {
-		    return new PokerMove(botName, CALL_ACTION, state.getAmountToCall());
+		    return loggedAction(botName, CALL_ACTION, callAmount);
 		}
 		break;
 	    case TWO_PAIR: // TODO: find out which card is in the TWO PAIR
-		// TODO: check if two pair is on the table or in our hand ^^
 		odds = 20;
 		if (sum > 10) {
-		    return new PokerMove(botName, CALL_ACTION, state.getAmountToCall());
+		    return loggedAction(botName, CALL_ACTION, callAmount);
 		}
 		break;
 	    case PAIR: // TODO: find out which card is in the PAIR
 		odds = 2;
 		if (sum > 20) {
-		    return new PokerMove(botName, CALL_ACTION, state.getAmountToCall());
+		    return loggedAction(botName, CALL_ACTION, callAmount);
 		}
 		break;
 	    case NO_PAIR:
 		odds = 1;
 		break;
 	}
-	return new PokerMove(botName, CHECK_ACTION, 0);
+	return loggedAction(botName, CHECK_ACTION, 0);
     }
 
     /**
      * We have a good hand, with how much do we raise?
      */
     private PokerMove raiseWithOdds(final BotState state, int odds) {
-	// final int myStack = state.getmyStack();
-	// final int enemyStack = state.getOpponentStack();
-
 	final int multiplier = 2 + (odds / 120);
+	int raise = multiplier * state.getBigBlind();
+	final int stackDiff = state.getmyStack() - state.getOpponentStack();
 
-	return new PokerMove(botName, RAISE_ACTION, multiplier * state.getBigBlind());
+	if (stackDiff > 0) { // we are ahead
+	    raise += (int) (0.15f * stackDiff);
+	}
+
+	final int raisedSoFar = roundMoneys.getOrDefault(RAISE_ACTION, 0);
+	final int calledSoFar = roundMoneys.getOrDefault(CALL_ACTION, 0);
+	final int bothSoFar = raisedSoFar + calledSoFar;
+
+	if (bothSoFar < raise) { // set to raise only once
+	    return loggedAction(botName, RAISE_ACTION, raise);
+	} else {
+	    final int callAmount = state.getAmountToCall();
+	    return loggedAction(botName, CALL_ACTION, callAmount);
+	}
     }
 
     // ****************
@@ -153,17 +175,15 @@ public class BotStarter implements Bot {
      * We are dealt a PAIR pre-flop. What do we do?
      */
     private PokerMove preFlopPair(final BotState state) {
-	final int callAmount = state.getAmountToCall();
 
 	// get the ordinal values of the pair in your hand
 	final int pairHeight = hand.getCard(0).getHeight().ordinal(); // should be identical
 
 	if (pairHeight > 7) { // TEN or higher
-	    // TODO: make raise dynamic?
 	    return preFlopRaise(state, (pairHeight - 7) * 2);
 	} else if (pairHeight > 5) { // EIGHT or higher
-	    // TODO: call only once?
-	    return new PokerMove(botName, CALL_ACTION, callAmount);
+	    return preFlopCall(state, 4);
+	    // return loggedAction(botName, CALL_ACTION, callAmount);
 	}
 	// else
 	return preFlopCheck(state);
@@ -173,8 +193,6 @@ public class BotStarter implements Bot {
      * We are dealt NO PAIR pre-flop. What do we do?
      */
     private PokerMove preFlopNoPair(final BotState state) {
-	final int callAmount = state.getAmountToCall();
-
 	final Card cardX = hand.getCard(0);
 	final Card cardY = hand.getCard(1);
 	// get the ordinal values of the cards in your hand
@@ -182,14 +200,14 @@ public class BotStarter implements Bot {
 	final int height2 = cardY.getHeight().ordinal();
 	final int sum = height1 + height2;
 	final int diff = Math.abs(height1 - height2);
-	// final boolean suited = cardY.getSuit().equals(cardX.getSuit());
+	final boolean suited = cardY.getSuit().equals(cardX.getSuit());
 
-	if (sum > 20) { // AK23 - AQ22 - KQ21 - AJ21
+	if (sum > 20) { // AK23 - AQ22 - KQ21 - AJ21 -
 	    return preFlopRaise(state, (sum - 20)); // raises at least once
 	} else if (height1 > 9 || height2 > 9) { // AKQ
-	    if (diff < 3) { // with semi-connected second card
-		return new PokerMove(botName, CALL_ACTION, callAmount);
-	    } // TODO: do we call on suited cards?
+	    if (diff < 3 || (diff < 4 && suited)) { // with semi-connected second card
+		return preFlopCall(state, 3);
+	    }
 	}
 	// else
 	return preFlopCheck(state);
@@ -200,11 +218,12 @@ public class BotStarter implements Bot {
      */
     private PokerMove preFlopCheck(final BotState state) {
 	final int callAmount = state.getAmountToCall();
-	// TODO: drop this code when the blind becomes too big?
-	if ((state.getCurrentBet() + callAmount) < state.getBigBlind()) { // curiosity fee
-	    return new PokerMove(botName, CALL_ACTION, callAmount);
+	final float blindRatio = (float) state.getBigBlind() / state.getmyStack();
+	// when the blind is too big compared to our stack, we don't peek as much // TODO: is this smart?
+	if (blindRatio < CURIOSITY && callAmount < state.getBigBlind()) { // curiosity fee
+	    return loggedAction(botName, CALL_ACTION, callAmount);
 	} else {
-	    return new PokerMove(botName, CHECK_ACTION, 0);
+	    return loggedAction(botName, CHECK_ACTION, 0);
 	}
     }
 
@@ -216,16 +235,72 @@ public class BotStarter implements Bot {
      */
     private PokerMove preFlopRaise(final BotState state, final int factor) {
 	final int minRaise = 2 * state.getBigBlind();
+	int max = factor * minRaise;
+	final int stackDiff = state.getmyStack() - state.getOpponentStack();
 
-	// TODO: getCurrentBet does not seem to work pre-flop!
-	if (totalPreFlopRaise < factor * minRaise) {
-	    totalPreFlopRaise += minRaise;
-	    return new PokerMove(botName, RAISE_ACTION, minRaise);
-	} else {
-	    final int callAmount = state.getAmountToCall();
-	    // TODO: set upper bound on call as well, based on factor?
-	    return new PokerMove(botName, CALL_ACTION, callAmount);
+	if (stackDiff > 0) { // we are ahead
+	    max += (int) (0.1f * stackDiff);
 	}
+
+	final int raisedSoFar = roundMoneys.getOrDefault(RAISE_ACTION, 0);
+	final int calledSoFar = roundMoneys.getOrDefault(CALL_ACTION, 0);
+	final int bothSoFar = raisedSoFar + calledSoFar;
+
+	if (bothSoFar < max) {
+	    return loggedAction(botName, RAISE_ACTION, minRaise);
+	} else {
+	    return preFlopCall(state, factor);
+	}
+    }
+
+    /**
+     * Will call up to a certain point, determined by factor value. After that, checks.
+     * 
+     * @param factor
+     *            Determines maximal call. Is a factor of BIG BLIND. (Should be at least 3 to be able to call one minimum raise)
+     */
+    private PokerMove preFlopCall(final BotState state, final int factor) {
+	final int callAmount = state.getAmountToCall();
+	final int max = factor * state.getBigBlind();
+
+	final int raisedSoFar = roundMoneys.getOrDefault(RAISE_ACTION, 0);
+	final int calledSoFar = roundMoneys.getOrDefault(CALL_ACTION, 0);
+	final int bothSoFar = raisedSoFar + calledSoFar;
+
+	if (bothSoFar + callAmount <= max) {
+	    return loggedAction(botName, CALL_ACTION, callAmount);
+	} else {
+	    return preFlopCheck(state);
+	}
+    }
+
+    /**
+     * TODO: add more logging to this method
+     */
+    private PokerMove loggedAction(final String botName, final String action, final int amount) {
+	final int currentAmount = roundMoneys.getOrDefault(action, 0);
+	roundMoneys.put(action, currentAmount + amount);
+
+	return new PokerMove(botName, action, amount);
+    }
+
+    /**
+     * Calculates the hand strength, only works with 5 cards. This uses the com.stevebrecher package to get hand strength.
+     * 
+     * @param cardSet
+     *            : a set of five cards
+     * @return HandCategory with what the cardSet is worth
+     */
+    public HandEval.HandCategory getCardsCategory(final Card[] cardSet) {
+	if (cardSet != null && cardSet.length == 5) {
+	    long handCode = 0;
+	    for (Card card : cardSet) {
+		handCode += card.getNumber();
+	    }
+	    return rankToCategory(HandEval.hand5Eval(handCode));
+
+	}
+	return null;
     }
 
     // ***********************
