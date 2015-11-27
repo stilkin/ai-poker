@@ -22,6 +22,8 @@ import poker.PokerMove;
 /**
  * This class is the brains of your bot. Make your calculations here and return the best move with GetMove
  * 
+ * http://wizardofodds.com/games/texas-hold-em/2-player-game/ http://www.holdemsecrets.com/startinghands.htm
+ * 
  * @author stilkin
  */
 public class BotStarter implements Bot {
@@ -35,6 +37,7 @@ public class BotStarter implements Bot {
     private String botName = "stilkin";
     private HandHoldem hand;
     private int lastRound = -1;
+    private int minRaise;
 
     /**
      * Implement this method to return the best move you can. Currently it will return a raise the ordinal value of one of our cards is higher than 9, a call when one of the cards
@@ -48,8 +51,10 @@ public class BotStarter implements Bot {
      */
     @Override
     public PokerMove getMove(BotState state, Long timeOut) {
+	// set some round variables
 	botName = state.getMyName();
 	hand = state.getHand();
+	minRaise = 2 * state.getBigBlind();
 	final Card[] table = state.getTable();
 
 	if (lastRound != state.getRound()) { // reset round counters
@@ -162,7 +167,7 @@ public class BotStarter implements Bot {
 	final HandEval.HandCategory category = getHandCategory(hand, table);
 
 	switch (category) {
-	    case PAIR: // they are identical
+	    case PAIR: // UPDATED
 		return preFlopPair(state);
 	    case NO_PAIR: // not identical
 		return preFlopNoPair(state);
@@ -175,42 +180,76 @@ public class BotStarter implements Bot {
      * We are dealt a PAIR pre-flop. What do we do?
      */
     private PokerMove preFlopPair(final BotState state) {
-
-	// get the ordinal values of the pair in your hand
 	final int pairHeight = hand.getCard(0).getHeight().ordinal(); // should be identical
+	float winOdds = 0.1f;
 
-	if (pairHeight > 7) { // TEN or higher
-	    return preFlopRaise(state, (pairHeight - 7) * 2);
-	} else if (pairHeight > 5) { // EIGHT or higher
-	    return preFlopCall(state, 4);
-	    // return loggedAction(botName, CALL_ACTION, callAmount);
+	if (pairHeight > 9) {
+	    // High Pairs (80%ers): Aces, Kings, or Queens
+	    winOdds = 0.796f;
+	} else if (pairHeight > 4) {
+	    // Medium Pairs (70%ers): Jacks, Tens, Nines, Eights and Sevens
+	    winOdds = 0.653f;
+	} else {
+	    // Low Pairs (55%ers): sixes or lower
+	    return preFlopCheck(state);
 	}
-	// else
-	return preFlopCheck(state);
+
+	final PokerMove oddRaise = raiseWithOdds(state, winOdds);
+	if (oddRaise != null) { // we are going to raise
+	    return oddRaise;
+	} else { // we are being re-raised
+	    if (pairHeight > 9) {
+		// balls to the walls
+		return loggedAction(botName, CALL_ACTION, 0);
+	    } else {
+		// cop-out
+		return preFlopCheck(state);
+	    }
+	}
     }
 
     /**
      * We are dealt NO PAIR pre-flop. What do we do?
      */
     private PokerMove preFlopNoPair(final BotState state) {
-	final Card cardX = hand.getCard(0);
-	final Card cardY = hand.getCard(1);
-	// get the ordinal values of the cards in your hand
-	final int height1 = cardX.getHeight().ordinal();
-	final int height2 = cardY.getHeight().ordinal();
+	final int height1 = hand.getCard(0).getHeight().ordinal();
+	final int height2 = hand.getCard(1).getHeight().ordinal();
 	final int sum = height1 + height2;
-	final int diff = Math.abs(height1 - height2);
-	final boolean suited = cardY.getSuit().equals(cardX.getSuit());
 
-	if (sum > 20) { // AK23 - AQ22 - KQ21 - AJ21 -
-	    return preFlopRaise(state, (sum - 20)); // raises at least once
-	} else if (height1 > 9 || height2 > 9) { // AKQ
-	    if (diff < 3 || (diff < 4 && suited)) { // with semi-connected second card
-		return preFlopCall(state, 3);
+	if (height1 == 12 || height2 == 12) { // Ace
+	    if (sum > 20) {
+		// Ace-Face Suited (65%ers) and Ace-Face Offsuit (63%ers)
+		final float winOdds = 0.625f;
+		final PokerMove oddRaise = raiseWithOdds(state, winOdds);
+		if (oddRaise != null) { // we are going to raise
+		    return oddRaise;
+		} else { // we are being re-raised
+			 // cop-out // TODO: check for re-raise earlier
+		    return preFlopCheck(state);
+		}
+	    } else {
+		return preFlopCheck(state);
 	    }
 	}
-	// else
+
 	return preFlopCheck(state);
+    }
+
+    /**
+     * Raises up to a specific amount specified by the odds. Will return null if we cannot raise
+     */
+    private PokerMove raiseWithOdds(final BotState state, final float winOdds) {
+	final int raisedSoFar = roundMoneys.getOrDefault(RAISE_ACTION, 0);
+	final int calledSoFar = roundMoneys.getOrDefault(CALL_ACTION, 0);
+	final int spentSoFar = raisedSoFar + calledSoFar;
+	final int maxRaise = (int) (winOdds * state.getmyStack());
+	if (spentSoFar < maxRaise || spentSoFar < minRaise) {
+	    final int raisePart = maxRaise / 3; // we raise in 3 steps
+	    final int raise = Math.max(minRaise, raisePart);
+	    return loggedAction(botName, RAISE_ACTION, raise);
+	} else {
+	    return null;
+	}
     }
 
     /**
@@ -224,53 +263,6 @@ public class BotStarter implements Bot {
 	    return loggedAction(botName, CALL_ACTION, callAmount);
 	} else {
 	    return loggedAction(botName, CHECK_ACTION, 0);
-	}
-    }
-
-    /**
-     * Will raise the min raise up to a certain point, determined by factor value. After that, only calls.
-     * 
-     * @param factor
-     *            Determines maximal raise. Is a factor of 2 * BIG BLIND. (Should be at least 1)
-     */
-    private PokerMove preFlopRaise(final BotState state, final int factor) {
-	final int minRaise = 2 * state.getBigBlind();
-	int max = factor * minRaise;
-	final int stackDiff = state.getmyStack() - state.getOpponentStack();
-
-	if (stackDiff > 0) { // we are ahead
-	    max += (int) (0.1f * stackDiff);
-	}
-
-	final int raisedSoFar = roundMoneys.getOrDefault(RAISE_ACTION, 0);
-	final int calledSoFar = roundMoneys.getOrDefault(CALL_ACTION, 0);
-	final int bothSoFar = raisedSoFar + calledSoFar;
-
-	if (bothSoFar < max) {
-	    return loggedAction(botName, RAISE_ACTION, minRaise);
-	} else {
-	    return preFlopCall(state, factor);
-	}
-    }
-
-    /**
-     * Will call up to a certain point, determined by factor value. After that, checks.
-     * 
-     * @param factor
-     *            Determines maximal call. Is a factor of BIG BLIND. (Should be at least 3 to be able to call one minimum raise)
-     */
-    private PokerMove preFlopCall(final BotState state, final int factor) {
-	final int callAmount = state.getAmountToCall();
-	final int max = factor * state.getBigBlind();
-
-	final int raisedSoFar = roundMoneys.getOrDefault(RAISE_ACTION, 0);
-	final int calledSoFar = roundMoneys.getOrDefault(CALL_ACTION, 0);
-	final int bothSoFar = raisedSoFar + calledSoFar;
-
-	if (bothSoFar + callAmount <= max) {
-	    return loggedAction(botName, CALL_ACTION, callAmount);
-	} else {
-	    return preFlopCheck(state);
 	}
     }
 

@@ -9,13 +9,12 @@
  * @License MIT License (http://opensource.org/Licenses/MIT)
  */
 
-
 package bot;
 
 import poker.PokerMove;
 
 public interface Bot {
 
-	public PokerMove getMove(BotState state, Long timeOut);
+    public PokerMove getMove(BotState state, Long timeOut);
 
 }

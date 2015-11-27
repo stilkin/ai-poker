@@ -19,9 +19,7 @@ import poker.PokerMove;
  * Class that reads the engine's input and asks the bot Class to calculate the next move. Then returns that move to the engine.
  */
 public class BotParser {
-
     final Scanner scan;
-
     final Bot bot;
 
     public BotParser(Bot bot) {
