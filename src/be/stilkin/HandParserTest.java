@@ -31,6 +31,7 @@ public class HandParserTest {
 	cards.add(new Card(9+13));
 	cards.add(new Card(7+26));
 
+	cards.add(new Card(2+26));
 	
 	HandParser hp = new HandParser();
 	hp.addCards(cards.toArray(new Card[]{}));
@@ -40,6 +41,8 @@ public class HandParserTest {
 	System.err.println("4OAK: " + hp.hasMultiple(4));
 	System.err.println("Flush: " + hp.hasFlush());
 	System.err.println("Straight: " + hp.hasStraight(5));
+	System.err.println("Straight flush: " + hp.hasStraightFlush(5));
+	System.err.println("Amount of pairs: " + hp.countMultiples(2));
 
     }
 
