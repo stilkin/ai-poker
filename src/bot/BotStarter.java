@@ -15,6 +15,7 @@ import java.util.HashMap;
 
 import com.stevebrecher.HandEval;
 
+import be.stilkin.HandParser;
 import poker.Card;
 import poker.HandHoldem;
 import poker.PokerMove;
@@ -33,11 +34,14 @@ public class BotStarter implements Bot {
     public static final String FOLD_ACTION = "fold";
     public static final float CURIOSITY = 0.05f;
     public static final float COCKYNESS = 0.025f;
-    private HashMap<String, Integer> roundMoneys = new HashMap<String, Integer>();
+    private final HashMap<String, Integer> roundMoneys = new HashMap<String, Integer>();
+    private final HandParser myParser = new HandParser();
+    private final HandParser opponentParser = new HandParser();
     private String botName = "stilkin";
     private HandHoldem hand;
     private int lastRound = -1;
     private int minRaise;
+
 
     /**
      * Implement this method to return the best move you can. Currently it will return a raise the ordinal value of one of our cards is higher than 9, a call when one of the cards
@@ -74,16 +78,22 @@ public class BotStarter implements Bot {
     // *****************
 
     private PokerMove postFlop(final Card[] table, final BotState state) {
-	final int callAmount = state.getAmountToCall();
-	HandEval.HandCategory botHand = getHandCategory(hand, table);
-	final HandEval.HandCategory tableHand = getCardsCategory(table);
-
-	// if the five table cards are stronger or equally strong // TODO: code for flop and river
-	if (tableHand != null && tableHand.ordinal() >= botHand.ordinal()) {
-	    // only look at our own cards for decision making
-	    // botHand = getHandCategory(hand, null);
+	opponentParser.clear();
+	myParser.clear();
+	
+	opponentParser.addCards(table);
+	myParser.addCards(table);
+	myParser.addCards(state.getHand().getCards());
+	
+	// if the table cards are stronger or equally strong, we bail
+	if (opponentParser.getHandCategory().ordinal() >= myParser.getHandCategory().ordinal()) {
 	    return preFlopCheck(state);
 	}
+	
+	final int callAmount = state.getAmountToCall();
+	HandEval.HandCategory myHand = getHandCategory(hand, table);
+	
+	// TODO: check potential for flush or straight on the table
 
 	// Get the ordinal values of the cards in your hand
 	final int height1 = hand.getCard(0).getHeight().ordinal();
@@ -91,7 +101,7 @@ public class BotStarter implements Bot {
 	final int sum = height1 + height2;
 
 	int odds = 1;
-	switch (botHand) {
+	switch (myHand) {
 	    case STRAIGHT_FLUSH:
 		odds = 72192;
 		return raiseWithOdds(state, odds);
