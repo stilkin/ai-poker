@@ -14,8 +14,10 @@ package bot;
 import java.util.HashMap;
 
 import com.stevebrecher.HandEval;
+import com.stevebrecher.HandEval.HandCategory;
 
 import be.stilkin.HandParser;
+import be.stilkin.StartingHands;
 import poker.Card;
 import poker.HandHoldem;
 import poker.PokerMove;
@@ -23,7 +25,7 @@ import poker.PokerMove;
 /**
  * This class is the brains of your bot. Make your calculations here and return the best move with GetMove
  * 
- * http://wizardofodds.com/games/texas-hold-em/2-player-game/ http://www.holdemsecrets.com/startinghands.htm
+ * http://www.holdemsecrets.com/startinghands.htm
  * 
  * @author stilkin
  */
@@ -34,14 +36,14 @@ public class BotStarter implements Bot {
     public static final String FOLD_ACTION = "fold";
     public static final float CURIOSITY = 0.05f;
     public static final float COCKYNESS = 0.025f;
+    private static final float ODD_LOWER_BOUND = 0.60f;
     private final HashMap<String, Integer> roundMoneys = new HashMap<String, Integer>();
-    private final HandParser myParser = new HandParser();
-    private final HandParser opponentParser = new HandParser();
+    private final HandParser myHandParser = new HandParser();
+    private final HandParser tableHandParser = new HandParser();
     private String botName = "stilkin";
     private HandHoldem hand;
     private int lastRound = -1;
     private int minRaise;
-
 
     /**
      * Implement this method to return the best move you can. Currently it will return a raise the ordinal value of one of our cards is higher than 9, a call when one of the cards
@@ -67,7 +69,7 @@ public class BotStarter implements Bot {
 	}
 
 	if (table == null || table.length < 3) { // pre-flop
-	    return preFlop(table, state);
+	    return preFlop(state);
 	} else { // post-flop
 	    return postFlop(table, state);
 	}
@@ -78,22 +80,25 @@ public class BotStarter implements Bot {
     // *****************
 
     private PokerMove postFlop(final Card[] table, final BotState state) {
-	opponentParser.clear();
-	myParser.clear();
-	
-	opponentParser.addCards(table);
-	myParser.addCards(table);
-	myParser.addCards(state.getHand().getCards());
-	
+	// reset parsers
+	tableHandParser.clear();
+	myHandParser.clear();
+
+	// init parser with this rounds' cards
+	tableHandParser.addCards(table);
+	myHandParser.addCards(table);
+	myHandParser.addCards(state.getHand().getCards());
+
 	// if the table cards are stronger or equally strong, we bail
-	if (opponentParser.getHandCategory().ordinal() >= myParser.getHandCategory().ordinal()) {
+	if (tableHandParser.getHandCategory().ordinal() >= myHandParser.getHandCategory().ordinal()) {
+	    // TODO: check height of pairs and such on the table?
 	    return preFlopCheck(state);
 	}
-	
-	final int callAmount = state.getAmountToCall();
-	HandEval.HandCategory myHand = getHandCategory(hand, table);
-	
 	// TODO: check potential for flush or straight on the table
+
+	// if we get here we have at least one of the cards in our hand, otherwise the table would be as good as our hand (see higher)
+	final int callAmount = state.getAmountToCall();
+	final HandEval.HandCategory myHand = getHandCategory(hand, table);
 
 	// Get the ordinal values of the cards in your hand
 	final int height1 = hand.getCard(0).getHeight().ordinal();
@@ -119,13 +124,19 @@ public class BotStarter implements Bot {
 		return raiseWithOdds(state, odds);
 	    case THREE_OF_A_KIND: // TODO: find out which card is in the THREE OF A KIND
 		odds = 46;
-		if (sum > 5) {
+		boolean trips = hand.getCard(0).getHeight() == hand.getCard(1).getHeight();
+		if (trips) {
+		    return raiseWithOdds(state, odds / 2);
+		} else if (sum > 15) {
 		    return loggedAction(botName, CALL_ACTION, callAmount);
 		}
 		break;
 	    case TWO_PAIR: // TODO: find out which card is in the TWO PAIR
 		odds = 20;
-		if (sum > 10) {
+		boolean pairOnTable = tableHandParser.getHandCategory().ordinal() >= HandCategory.PAIR.ordinal();
+		if (!pairOnTable && sum > 10) {
+		    return raiseWithOdds(state, odds / 2);
+		} else if (sum > 15) {
 		    return loggedAction(botName, CALL_ACTION, callAmount);
 		}
 		break;
@@ -171,77 +182,33 @@ public class BotStarter implements Bot {
     // ****************
 
     /**
-     * What do we do pre-flop? Depends on pair / no-pair
+     * What do we do pre-flop? We get the odds and raise according to any odds over 50%
      */
-    private PokerMove preFlop(final Card[] table, final BotState state) {
-	final HandEval.HandCategory category = getHandCategory(hand, table);
+    private PokerMove preFlop(final BotState state) {
+	final float winOdds = StartingHands.getOdds(hand.getCard(0), hand.getCard(1));
 
-	switch (category) {
-	    case PAIR: // UPDATED
-		return preFlopPair(state);
-	    case NO_PAIR: // not identical
-		return preFlopNoPair(state);
-	    default:
-		return preFlopCheck(state);
-	}
-    }
-
-    /**
-     * We are dealt a PAIR pre-flop. What do we do?
-     */
-    private PokerMove preFlopPair(final BotState state) {
-	final int pairHeight = hand.getCard(0).getHeight().ordinal(); // should be identical
-	float winOdds = 0.1f;
-
-	if (pairHeight > 9) {
-	    // High Pairs (80%ers): Aces, Kings, or Queens
-	    winOdds = 0.796f;
-	} else if (pairHeight > 4) {
-	    // Medium Pairs (70%ers): Jacks, Tens, Nines, Eights and Sevens
-	    winOdds = 0.653f;
-	} else {
-	    // Low Pairs (55%ers): sixes or lower
-	    return preFlopCheck(state);
+	final PokerMove oppAction = state.getOpponentAction();
+	boolean oppRaise = false;
+	if (oppAction != null) {
+	    oppRaise = RAISE_ACTION.equals(oppAction.getAction());
 	}
 
 	final PokerMove oddRaise = raiseWithOdds(state, winOdds);
-	if (oddRaise != null) { // we are going to raise
-	    return oddRaise;
-	} else { // we are being re-raised
-	    if (pairHeight > 9) {
-		// balls to the walls
+	if (winOdds > ODD_LOWER_BOUND) { // over 60%
+	    if (oddRaise != null) { 
+		return oddRaise; // we raise
+	    } else { // we are being re-raised
+		System.err.println("Pre-flop, BANZAII scenario.");
 		return loggedAction(botName, CALL_ACTION, 0);
-	    } else {
-		// cop-out
+	    }
+	} else if (winOdds > 0 && !oppRaise) { // between 50% and 60%
+	    if (oddRaise != null) { 
+		return oddRaise; // we raise
+	    } else { // we are being re-raised // TODO: can this happen?
 		return preFlopCheck(state);
 	    }
 	}
-    }
-
-    /**
-     * We are dealt NO PAIR pre-flop. What do we do?
-     */
-    private PokerMove preFlopNoPair(final BotState state) {
-	final int height1 = hand.getCard(0).getHeight().ordinal();
-	final int height2 = hand.getCard(1).getHeight().ordinal();
-	final int sum = height1 + height2;
-
-	if (height1 == 12 || height2 == 12) { // Ace
-	    if (sum > 20) {
-		// Ace-Face Suited (65%ers) and Ace-Face Offsuit (63%ers)
-		final float winOdds = 0.625f;
-		final PokerMove oddRaise = raiseWithOdds(state, winOdds);
-		if (oddRaise != null) { // we are going to raise
-		    return oddRaise;
-		} else { // we are being re-raised
-			 // cop-out // TODO: check for re-raise earlier
-		    return preFlopCheck(state);
-		}
-	    } else {
-		return preFlopCheck(state);
-	    }
-	}
-
+	// poor starting hand, or average hand was re-raised
 	return preFlopCheck(state);
     }
 
@@ -266,10 +233,11 @@ public class BotStarter implements Bot {
      * Calls up to big blind, otherwise checks (pre-flop)
      */
     private PokerMove preFlopCheck(final BotState state) {
+	final int blindDiff = state.getBigBlind() - state.getSmallBlind();
 	final int callAmount = state.getAmountToCall();
-	final float blindRatio = (float) state.getBigBlind() / state.getmyStack();
-	// when the blind is too big compared to our stack, we don't peek as much // TODO: is this smart?
-	if (blindRatio < CURIOSITY && callAmount < state.getBigBlind()) { // curiosity fee
+	final float costRatio = (float) blindDiff / state.getmyStack();
+	// when the blind is too big compared to our stack, we don't peek // TODO: is this smart?
+	if (costRatio < CURIOSITY && callAmount <= blindDiff) {
 	    return loggedAction(botName, CALL_ACTION, callAmount);
 	} else {
 	    return loggedAction(botName, CHECK_ACTION, 0);

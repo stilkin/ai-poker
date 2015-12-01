@@ -1,13 +1,14 @@
-package be.stilkin;
+package be.testing;
 
 
 import java.util.ArrayList;
 import java.util.List;
 
+import be.stilkin.HandParser;
 import poker.Card;
 
 /**
- * 
+ * This class contains a main method. Do not include when packing bot.
  * @author stilkin
  *
  */
@@ -25,7 +26,7 @@ public class HandParserTest {
 	// pair / 3oak
 	cards.add(new Card(11+13));
 	cards.add(new Card(11+26));
-	cards.add(new Card(11));
+	//cards.add(new Card(11));
 	
 	// complete the straight
 	cards.add(new Card(9+13));
@@ -33,7 +34,7 @@ public class HandParserTest {
 
 	cards.add(new Card(2+26));
 	
-	HandParser hp = new HandParser();
+	final HandParser hp = new HandParser();
 	hp.addCards(cards.toArray(new Card[]{}));
 	
 	System.err.println("Pair: " + hp.hasMultiple(2));
