@@ -36,7 +36,7 @@ public class BotStarter implements Bot {
     public static final String FOLD_ACTION = "fold";
     public static final float CURIOSITY = 0.05f;
     public static final float COCKYNESS = 0.025f;
-    private static final float ODD_LOWER_BOUND = 0.60f;
+    private static final float ODD_LOWER_BOUND = 0.55f;
     private final HashMap<String, Integer> roundMoneys = new HashMap<String, Integer>();
     private final HandParser myHandParser = new HandParser();
     private final HandParser tableHandParser = new HandParser();
@@ -106,28 +106,64 @@ public class BotStarter implements Bot {
 	final int sum = height1 + height2;
 
 	int odds = 1;
+	// calculate som odds as multipliers
 	switch (myHand) {
 	    case STRAIGHT_FLUSH:
 		odds = 72192;
-		return raiseWithOdds(state, odds);
+		break;
 	    case FOUR_OF_A_KIND:
 		odds = 4164;
-		return raiseWithOdds(state, odds);
+		break;
 	    case FULL_HOUSE:
 		odds = 693;
-		return raiseWithOdds(state, odds);
-	    case FLUSH: // TODO: check flush height
+		break;
+	    case FLUSH:
 		odds = 508;
-		return raiseWithOdds(state, odds);
+		break;
 	    case STRAIGHT:
 		odds = 254;
-		return raiseWithOdds(state, odds);
-	    case THREE_OF_A_KIND: // TODO: find out which card is in the THREE OF A KIND
+		break;
+	    case THREE_OF_A_KIND:
+		odds = 46;
+		break;
+	    case TWO_PAIR:
+		odds = 20;
+		break;
+	    case PAIR:
+		odds = 2;
+		break;
+	    case NO_PAIR:
+		odds = 1;
+		break;
+	    default:
+		odds = 1;
+		break;
+	}
+
+	// determine right course of action
+	switch (myHand) {
+	    case STRAIGHT_FLUSH:
+	    case FOUR_OF_A_KIND:
+	    case FULL_HOUSE:
+	    case FLUSH:
+	    case STRAIGHT:
+		final PokerMove oddRaise = raiseWithOdds(state, odds);
+		if (oddRaise != null) {
+		    return oddRaise; // we raise
+		} else { // we are being re-raised
+		    return loggedAction(botName, CALL_ACTION, 0);
+		}
+	    case THREE_OF_A_KIND:
 		odds = 46;
 		boolean trips = hand.getCard(0).getHeight() == hand.getCard(1).getHeight();
 		if (trips) {
-		    return raiseWithOdds(state, odds / 2);
-		} else if (sum > 15) {
+		    final PokerMove tripsOddRaise = raiseWithOdds(state, odds / 2);
+		    if (tripsOddRaise != null) {
+			return tripsOddRaise; // we raise
+		    } else { // we are being re-raised
+			return loggedAction(botName, CALL_ACTION, 0);
+		    }
+		} else if (sum > 15) { // TODO: find out which card is in the THREE OF A KIND
 		    return loggedAction(botName, CALL_ACTION, callAmount);
 		}
 		break;
@@ -135,7 +171,12 @@ public class BotStarter implements Bot {
 		odds = 20;
 		boolean pairOnTable = tableHandParser.getHandCategory().ordinal() >= HandCategory.PAIR.ordinal();
 		if (!pairOnTable && sum > 10) {
-		    return raiseWithOdds(state, odds / 2);
+		    final PokerMove twoPairOddRaise = raiseWithOdds(state, odds / 2);
+		    if (twoPairOddRaise != null) {
+			return twoPairOddRaise; // we raise
+		    } else { // we are being re-raised
+			return loggedAction(botName, CALL_ACTION, 0);
+		    }
 		} else if (sum > 15) {
 		    return loggedAction(botName, CALL_ACTION, callAmount);
 		}
@@ -150,6 +191,7 @@ public class BotStarter implements Bot {
 		odds = 1;
 		break;
 	}
+
 	return loggedAction(botName, CHECK_ACTION, 0);
     }
 
@@ -194,18 +236,16 @@ public class BotStarter implements Bot {
 	}
 
 	final PokerMove oddRaise = raiseWithOdds(state, winOdds);
-	if (winOdds > ODD_LOWER_BOUND) { // over 60%
-	    if (oddRaise != null) { 
+	if (winOdds > ODD_LOWER_BOUND) { // over 55%
+	    if (oddRaise != null) {
 		return oddRaise; // we raise
 	    } else { // we are being re-raised
 		System.err.println("Pre-flop, BANZAII scenario.");
 		return loggedAction(botName, CALL_ACTION, 0);
 	    }
-	} else if (winOdds > 0 && !oppRaise) { // between 50% and 60%
-	    if (oddRaise != null) { 
+	} else if (winOdds > 0 && !oppRaise) { // between 50% and 55%
+	    if (oddRaise != null) {
 		return oddRaise; // we raise
-	    } else { // we are being re-raised // TODO: can this happen?
-		return preFlopCheck(state);
 	    }
 	}
 	// poor starting hand, or average hand was re-raised
@@ -221,7 +261,7 @@ public class BotStarter implements Bot {
 	final int spentSoFar = raisedSoFar + calledSoFar;
 	final int maxRaise = (int) (winOdds * state.getmyStack());
 	if (spentSoFar < maxRaise || spentSoFar < minRaise) {
-	    final int raisePart = maxRaise / 3; // we raise in 3 steps
+	    final int raisePart = maxRaise / 2; // we raise in 2 steps
 	    final int raise = Math.max(minRaise, raisePart);
 	    return loggedAction(botName, RAISE_ACTION, raise);
 	} else {
