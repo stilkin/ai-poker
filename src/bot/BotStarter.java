@@ -36,7 +36,7 @@ public class BotStarter implements Bot {
     public static final String FOLD_ACTION = "fold";
     public static final float CURIOSITY = 0.05f;
     public static final float COCKYNESS = 0.025f;
-    private static final float ODD_LOWER_BOUND = 0.55f;
+    private static final float ODD_LOWER_BOUND = 0.56f;
     private final HashMap<String, Integer> roundMoneys = new HashMap<String, Integer>();
     private final HandParser myHandParser = new HandParser();
     private final HandParser tableHandParser = new HandParser();
@@ -89,15 +89,15 @@ public class BotStarter implements Bot {
 	myHandParser.addCards(table);
 	myHandParser.addCards(state.getHand().getCards());
 
-	// if the table cards are stronger or equally strong, we bail
-	if (tableHandParser.getHandCategory().ordinal() >= myHandParser.getHandCategory().ordinal()) {
-	    // TODO: check height of pairs and such on the table?
+	// if the table cards are stronger, we bail
+	if (tableHandParser.getHandCategory().ordinal() > myHandParser.getHandCategory().ordinal()) {
 	    return preFlopCheck(state);
 	}
-	// TODO: check potential for flush or straight on the table
+	// TODO: check potential for flush or straight on the table?
 
 	// if we get here we have at least one of the cards in our hand, otherwise the table would be as good as our hand (see higher)
 	final int callAmount = state.getAmountToCall();
+	final float costRatio = (float) callAmount / state.getmyStack();
 	final HandEval.HandCategory myHand = getHandCategory(hand, table);
 
 	// Get the ordinal values of the cards in your hand
@@ -151,44 +151,46 @@ public class BotStarter implements Bot {
 		if (oddRaise != null) {
 		    return oddRaise; // we raise
 		} else { // we are being re-raised
-		    return loggedAction(botName, CALL_ACTION, 0);
+		    if (sum > 15 || costRatio < CURIOSITY) { // TODO: validate
+			return loggedAction(botName, CALL_ACTION, callAmount);
+		    } // else check or fold
 		}
-	    case THREE_OF_A_KIND:
-		odds = 46;
+	    case THREE_OF_A_KIND: // TODO: find out which card is in the THREE OF A KIND
 		boolean trips = hand.getCard(0).getHeight() == hand.getCard(1).getHeight();
 		if (trips) {
 		    final PokerMove tripsOddRaise = raiseWithOdds(state, odds / 2);
 		    if (tripsOddRaise != null) {
 			return tripsOddRaise; // we raise
 		    } else { // we are being re-raised
-			return loggedAction(botName, CALL_ACTION, 0);
+			if (sum > 15 || costRatio < CURIOSITY) { // TODO: validate
+			    return loggedAction(botName, CALL_ACTION, callAmount);
+			}
 		    }
-		} else if (sum > 15) { // TODO: find out which card is in the THREE OF A KIND
+		} else if (sum > 15 || costRatio < CURIOSITY) { // TODO: validate
 		    return loggedAction(botName, CALL_ACTION, callAmount);
 		}
 		break;
-	    case TWO_PAIR: // TODO: find out which card is in the TWO PAIR
-		odds = 20;
-		boolean pairOnTable = tableHandParser.getHandCategory().ordinal() >= HandCategory.PAIR.ordinal();
+	    case TWO_PAIR: // TODO: find out which cards are in the TWO PAIR
+		boolean pairOnTable = tableHandParser.getHandCategory().ordinal() >= HandCategory.PAIR.ordinal(); // danger for 3OAK
 		if (!pairOnTable && sum > 10) {
 		    final PokerMove twoPairOddRaise = raiseWithOdds(state, odds / 2);
 		    if (twoPairOddRaise != null) {
 			return twoPairOddRaise; // we raise
 		    } else { // we are being re-raised
-			return loggedAction(botName, CALL_ACTION, 0);
+			if (sum > 15 || costRatio < CURIOSITY) { // TODO: validate
+			    return loggedAction(botName, CALL_ACTION, callAmount);
+			}
 		    }
-		} else if (sum > 15) {
+		} else if (sum > 15 || costRatio < CURIOSITY) { // TODO: validate
 		    return loggedAction(botName, CALL_ACTION, callAmount);
 		}
 		break;
 	    case PAIR: // TODO: find out which card is in the PAIR
-		odds = 2;
-		if (sum > 20) {
+		if (sum > 20 || costRatio < CURIOSITY) { // TODO: validate
 		    return loggedAction(botName, CALL_ACTION, callAmount);
 		}
 		break;
 	    case NO_PAIR:
-		odds = 1;
 		break;
 	}
 
@@ -226,9 +228,10 @@ public class BotStarter implements Bot {
     /**
      * What do we do pre-flop? We get the odds and raise according to any odds over 50%
      */
+    
     private PokerMove preFlop(final BotState state) {
 	final float winOdds = StartingHands.getOdds(hand.getCard(0), hand.getCard(1));
-
+	final int callAmount = state.getAmountToCall();
 	final PokerMove oppAction = state.getOpponentAction();
 	boolean oppRaise = false;
 	if (oppAction != null) {
@@ -237,11 +240,21 @@ public class BotStarter implements Bot {
 
 	final PokerMove oddRaise = raiseWithOdds(state, winOdds);
 	if (winOdds > ODD_LOWER_BOUND) { // over 55%
-	    if (oddRaise != null) {
-		return oddRaise; // we raise
-	    } else { // we are being re-raised
+	    if (oddRaise != null ) {
+		if (!oppRaise) {
+		    return oddRaise; // we raise
+		} else { // opponent has raised
+		    
+		    final int diff = oddRaise.getAmount() - callAmount;
+		    if (diff >= minRaise) { // we raise
+			return loggedAction(botName, RAISE_ACTION, diff);
+		    } else { // we call
+			return loggedAction(botName, CALL_ACTION, callAmount);
+		    }
+		}		
+	    } else { // we have been re-raised 0_o
 		System.err.println("Pre-flop, BANZAII scenario.");
-		return loggedAction(botName, CALL_ACTION, 0);
+		return loggedAction(botName, CALL_ACTION, callAmount);
 	    }
 	} else if (winOdds > 0 && !oppRaise) { // between 50% and 55%
 	    if (oddRaise != null) {
