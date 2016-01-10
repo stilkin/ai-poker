@@ -26,7 +26,7 @@ public class HandParserTest {
 	// pair / 3oak
 	cards.add(new Card(11+13));
 	cards.add(new Card(11+26));
-	//cards.add(new Card(11));
+	cards.add(new Card(11));
 	
 	// complete the straight
 	cards.add(new Card(9+13));
@@ -43,7 +43,9 @@ public class HandParserTest {
 	System.err.println("Flush: " + hp.hasFlush());
 	System.err.println("Straight: " + hp.hasStraight(5));
 	System.err.println("Straight flush: " + hp.hasStraightFlush(5));
+	System.err.println("Full house: " + hp.hasFullHouse());
 	System.err.println("Amount of pairs: " + hp.countMultiples(2));
+	System.err.println("Category: " + hp.getHandCategory().toString());
 
     }
 

@@ -60,8 +60,10 @@ public class BotStarter implements Bot {
 	// set some round variables
 	botName = state.getMyName();
 	hand = state.getHand();
-	minRaise = 2 * state.getBigBlind();
+	minRaise = 2 * state.getBigBlind(); 
 	final Card[] table = state.getTable();
+	final int callAmount = 	state.getAmountToCall();
+	minRaise = Math.max(minRaise, callAmount); // TODO: currently assuming this is right
 
 	if (lastRound != state.getRound()) { // reset round counters
 	    lastRound = state.getRound();

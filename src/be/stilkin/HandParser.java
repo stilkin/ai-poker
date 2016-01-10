@@ -158,6 +158,15 @@ public class HandParser {
 	return -1;
     }
 
+    public int hasFullHouse() { // TODO: validate
+	final int three = hasMultiple(3);
+	if (three > 0 && countMultiples(2) > 1) {
+	    return three;
+	} else {
+	    return -1;
+	}
+    }
+
     /**
      * @param suit
      *            0 1 2 3 for SPADES / HEARTS / CLUBS / DIAMONDS
@@ -183,6 +192,9 @@ public class HandParser {
 	}
 	if (hasMultiple(4) > 0) {
 	    return HandCategory.FOUR_OF_A_KIND;
+	}
+	if (hasFullHouse() > 0) {
+	    return HandCategory.FULL_HOUSE;
 	}
 	if (hasFlush()) {
 	    return HandCategory.FLUSH;
