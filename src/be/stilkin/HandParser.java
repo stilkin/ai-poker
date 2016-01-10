@@ -55,6 +55,8 @@ public class HandParser {
 	for (int d = 0; d < decks.length; d++) {
 	    Arrays.fill(decks[d], 0);
 	}
+	Arrays.fill(suitCount, 0);
+	Arrays.fill(valueCount, 0);
     }
 
     /**

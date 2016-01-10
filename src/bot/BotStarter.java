@@ -66,6 +66,7 @@ public class BotStarter implements Bot {
 	if (lastRound != state.getRound()) { // reset round counters
 	    lastRound = state.getRound();
 	    roundMoneys.clear();
+	    System.err.println("Round: " + lastRound);
 	}
 
 	if (table == null || table.length < 3) { // pre-flop
@@ -90,10 +91,11 @@ public class BotStarter implements Bot {
 	myHandParser.addCards(state.getHand().getCards());
 
 	// if the table cards are stronger, we bail
-	if (tableHandParser.getHandCategory().ordinal() > myHandParser.getHandCategory().ordinal()) {
+	if (tableHandParser.getHandCategory().ordinal() >= myHandParser.getHandCategory().ordinal()) {
+	    System.err.println("Post-flop, table appears to equal our hand: " + myHandParser.getHandCategory().toString());
+	    // TODO: check if we have higher value cards, (this can also be pair or high card case)
 	    return preFlopCheck(state);
 	}
-	// TODO: check potential for flush or straight on the table?
 
 	// if we get here we have at least one of the cards in our hand, otherwise the table would be as good as our hand (see higher)
 	final int callAmount = state.getAmountToCall();
@@ -185,7 +187,7 @@ public class BotStarter implements Bot {
 		    return loggedAction(botName, CALL_ACTION, callAmount);
 		}
 		break;
-	    case PAIR: // TODO: find out which card is in the PAIR
+	    case PAIR: // TODO: find out which card is in the PAIR !! TODO TODO TODO 
 		if (sum > 20 || costRatio < CURIOSITY) { // TODO: validate
 		    return loggedAction(botName, CALL_ACTION, callAmount);
 		}
@@ -226,7 +228,7 @@ public class BotStarter implements Bot {
     // ****************
 
     /**
-     * What do we do pre-flop? We get the odds and raise according to any odds over 50%
+     * What do we do pre-flop? We get the odds and raise according to any odds over 55%
      */
     
     private PokerMove preFlop(final BotState state) {
@@ -244,23 +246,26 @@ public class BotStarter implements Bot {
 		if (!oppRaise) {
 		    return oddRaise; // we raise
 		} else { // opponent has raised
-		    
 		    final int diff = oddRaise.getAmount() - callAmount;
-		    if (diff >= minRaise) { // we raise
+		    if (diff >= minRaise) { // we re-raise
 			return loggedAction(botName, RAISE_ACTION, diff);
 		    } else { // we call
 			return loggedAction(botName, CALL_ACTION, callAmount);
 		    }
 		}		
-	    } else { // we have been re-raised 0_o
-		System.err.println("Pre-flop, BANZAII scenario.");
+	    } else { // we ate in too deep 0_o
+		System.err.println("Pre-flop, crossing fingers.");
 		return loggedAction(botName, CALL_ACTION, callAmount);
 	    }
-	} else if (winOdds > 0 && !oppRaise) { // between 50% and 55%
-	    if (oddRaise != null) {
-		return oddRaise; // we raise
+	} else if (winOdds > 0 && oddRaise != null) { // between 50% and 55%
+	    if (!oppRaise) {
+		// TODO: cutoff here is only 50%, is that wise?
+		System.err.println("Pre-flop, low odds bet.");
+		int prudentBet = oddRaise.getAmount()/2;
+		prudentBet = Math.max(prudentBet, minRaise);
+		return loggedAction(botName, RAISE_ACTION, prudentBet); // we raise
 	    }
-	}
+	} 
 	// poor starting hand, or average hand was re-raised
 	return preFlopCheck(state);
     }
@@ -289,6 +294,7 @@ public class BotStarter implements Bot {
 	final int blindDiff = state.getBigBlind() - state.getSmallBlind();
 	final int callAmount = state.getAmountToCall();
 	final float costRatio = (float) blindDiff / state.getmyStack();
+	
 	// when the blind is too big compared to our stack, we don't peek // TODO: is this smart?
 	if (costRatio < CURIOSITY && callAmount <= blindDiff) {
 	    return loggedAction(botName, CALL_ACTION, callAmount);
@@ -303,7 +309,6 @@ public class BotStarter implements Bot {
     private PokerMove loggedAction(final String botName, final String action, final int amount) {
 	final int currentAmount = roundMoneys.getOrDefault(action, 0);
 	roundMoneys.put(action, currentAmount + amount);
-
 	return new PokerMove(botName, action, amount);
     }
 
