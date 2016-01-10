@@ -94,23 +94,31 @@ public class BotStarter implements Bot {
 
 	// if the table cards are stronger, we bail
 	if (tableHandParser.getHandCategory().ordinal() >= myHandParser.getHandCategory().ordinal()) {
-	    System.err.println("Post-flop, table appears to equal our hand: " + myHandParser.getHandCategory().toString());
+	    System.err.println("Post-flop, table appears to match our hand: " + myHandParser.getHandCategory().toString());
 	    // TODO: check if we have higher value cards, (this can also be pair or high card case)
 	    return preFlopCheck(state);
 	}
 
 	// if we get here we have at least one of the cards in our hand, otherwise the table would be as good as our hand (see higher)
 	final int callAmount = state.getAmountToCall();
-	final float costRatio = (float) callAmount / state.getmyStack();
+	final float costRatio = (float) callAmount / (float) state.getmyStack();
 	final HandEval.HandCategory myHand = getHandCategory(hand, table);
 
 	// Get the ordinal values of the cards in your hand
 	final int height1 = hand.getCard(0).getHeight().ordinal();
 	final int height2 = hand.getCard(1).getHeight().ordinal();
 	final int sum = height1 + height2;
+	System.err.println("Post-flop, we have " + myHandParser.getHandCategory().toString() + " " + myHand.toString());
+	System.err.println("Callamount: " + callAmount + " sum: " + sum);
+	
+	final PokerMove oppAction = state.getOpponentAction();
+	boolean oppRaise = false;
+	if (oppAction != null) {
+	    oppRaise = RAISE_ACTION.equals(oppAction.getAction());
+	}
 
 	int odds = 1;
-	// calculate som odds as multipliers
+	// calculate some odds as multipliers
 	switch (myHand) {
 	    case STRAIGHT_FLUSH:
 		odds = 72192;
@@ -143,6 +151,8 @@ public class BotStarter implements Bot {
 		odds = 1;
 		break;
 	}
+	
+	final boolean flushDanger = tableHandParser.hasSuited(3) && oppRaise; // do I smell a flush?
 
 	// determine right course of action
 	switch (myHand) {
@@ -154,23 +164,24 @@ public class BotStarter implements Bot {
 		final PokerMove oddRaise = raiseWithOdds(state, odds);
 		if (oddRaise != null) {
 		    return oddRaise; // we raise
-		} else { // we are being re-raised
+		} else { // we have been re-raised
 		    if (sum > 15 || costRatio < CURIOSITY) { // TODO: validate
 			return loggedAction(botName, CALL_ACTION, callAmount);
 		    } // else check or fold
 		}
 	    case THREE_OF_A_KIND: // TODO: find out which card is in the THREE OF A KIND
-		boolean trips = hand.getCard(0).getHeight() == hand.getCard(1).getHeight();
-		if (trips) {
+		final boolean pairInHand = hand.getCard(0).getHeight() == hand.getCard(1).getHeight();
+		
+		if (pairInHand) {
 		    final PokerMove tripsOddRaise = raiseWithOdds(state, odds / 2);
 		    if (tripsOddRaise != null) {
 			return tripsOddRaise; // we raise
 		    } else { // we are being re-raised
-			if (sum > 15 || costRatio < CURIOSITY) { // TODO: validate
+			if (!flushDanger && ( sum > 15 || costRatio < CURIOSITY)) { // TODO: validate
 			    return loggedAction(botName, CALL_ACTION, callAmount);
 			}
 		    }
-		} else if (sum > 15 || costRatio < CURIOSITY) { // TODO: validate
+		} else if (!flushDanger && ( sum > 15 || costRatio < CURIOSITY)) { // TODO: validate
 		    return loggedAction(botName, CALL_ACTION, callAmount);
 		}
 		break;
@@ -181,16 +192,17 @@ public class BotStarter implements Bot {
 		    if (twoPairOddRaise != null) {
 			return twoPairOddRaise; // we raise
 		    } else { // we are being re-raised
-			if (sum > 15 || costRatio < CURIOSITY) { // TODO: validate
+			if (!flushDanger && ( sum > 15 || costRatio < CURIOSITY)) { // TODO: validate
 			    return loggedAction(botName, CALL_ACTION, callAmount);
 			}
 		    }
-		} else if (sum > 15 || costRatio < CURIOSITY) { // TODO: validate
+		} else if (!flushDanger && ( sum > 15 || costRatio < CURIOSITY)) { // TODO: validate
 		    return loggedAction(botName, CALL_ACTION, callAmount);
 		}
 		break;
-	    case PAIR: // TODO: find out which card is in the PAIR !! TODO TODO TODO 
-		if (sum > 20 || costRatio < CURIOSITY) { // TODO: validate
+	    case PAIR:
+		// if we are here the pair is in our hands
+		if (!flushDanger && ( sum > 20 || costRatio < CURIOSITY)) { // TODO: validate
 		    return loggedAction(botName, CALL_ACTION, callAmount);
 		}
 		break;
@@ -232,7 +244,6 @@ public class BotStarter implements Bot {
     /**
      * What do we do pre-flop? We get the odds and raise according to any odds over 55%
      */
-    
     private PokerMove preFlop(final BotState state) {
 	final float winOdds = StartingHands.getOdds(hand.getCard(0), hand.getCard(1));
 	final int callAmount = state.getAmountToCall();

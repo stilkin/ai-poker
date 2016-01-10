@@ -31,7 +31,7 @@ public class HandParser {
      * 
      * @param card
      */
-    public void addCard(Card card) {
+    public void addCard(final Card card) {
 	final int suit = card.getSuit().ordinal();
 	final int height = card.getHeight().ordinal();
 	decks[suit][height]++;
@@ -42,7 +42,7 @@ public class HandParser {
     /**
      * At an array of cards
      */
-    public void addCards(Card[] cards) {
+    public void addCards(final Card[] cards) {
 	for (Card c : cards) {
 	    addCard(c);
 	}
@@ -91,18 +91,27 @@ public class HandParser {
 	}
 	return count;
     }
-
+    
     /**
-     * Will return true if this hand has at least one flush
+     * Will return true if this hand has at least one set of suited cards size n
+     * @param n the amount of same-suited cards (pass 5 for flush)
+     * @return
      */
-    public boolean hasFlush() {
+    public boolean hasSuited(final int n) {
 	for (int s = 0; s < MAX_SUIT; s++) {
-	    if (suitCount[s] >= 5) {
+	    if (suitCount[s] >= n) {
 		return true;
 	    }
 	}
 
 	return false;
+    }
+
+    /**
+     * Will return true if this hand has at least one flush
+     */
+    public boolean hasFlush() {
+	return hasSuited(5);
     }
 
     /**
@@ -115,14 +124,7 @@ public class HandParser {
     public int hasStraight(final int l) {
 	int continuous = 0;
 	for (int v = MAX_VALUE - 1; v >= 0; v--) {
-	    int valCount = 0;
-	    for (int s = 0; s < MAX_SUIT; s++) {
-		if (decks[s][v] > 0) {
-		    valCount++;
-		    break;
-		}
-	    }
-	    if (valCount < 1) { // at least one
+	    if (valueCount[v] < 1) { // at least one
 		continuous = 0;
 	    } else {
 		continuous++;

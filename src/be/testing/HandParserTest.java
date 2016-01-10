@@ -26,7 +26,7 @@ public class HandParserTest {
 	// pair / 3oak
 	cards.add(new Card(11+13));
 	cards.add(new Card(11+26));
-	cards.add(new Card(11));
+	//cards.add(new Card(11));
 	
 	// complete the straight
 	cards.add(new Card(9+13));
